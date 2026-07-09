@@ -1,0 +1,75 @@
+services:
+
+  # --- Text-to-Speech (voz em PT-BR) ---
+  piper:
+    image: rhasspy/wyoming-piper
+    container_name: piper
+    ports:
+      - "10200:10200"
+    volumes:
+      - ./piper:/data
+    command: --voice pt_BR-edresson-low --length-scale 1.0
+    restart: unless-stopped
+
+  # --- Speech-to-Text (Vosk, leve, PT-BR) ---
+  vosk:
+    image: rhasspy/wyoming-vosk
+    container_name: stt
+    ports:
+      - "10300:10300"
+    volumes:
+      - ./vosk-model:/data
+      - ./vosk-sentences:/sentences
+    command: --data-dir /data --model-for-language pt vosk-model-small-pt-0.3 --preload-language pt --sentences-dir /sentences
+    restart: unless-stopped
+
+  # --- Wake Word ---
+  openwakeword:
+    image: rhasspy/wyoming-openwakeword
+    container_name: wakeword
+    ports:
+      - "10400:10400"
+    volumes:
+      - ./openwakeword:/data
+    # troque --preload pelo nome do wakeword que você treinar/baixar
+    command: --preload-model hey_jarvis
+    restart: unless-stopped
+
+  # --- LLM local via llama.cpp (substitui o Ollama) ---
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: llm
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models
+    command: >
+      -m /models/qwen2.5-0.5b-instruct-q4_k_m.gguf
+      -c 2048
+      --host 0.0.0.0
+      --port 8080
+      -t 4
+    restart: unless-stopped
+
+  # --- Orquestrador (wake word -> STT -> LLM -> TTS -> áudio) ---
+  assistant:
+    build: ./assistant
+    container_name: voice-assistant
+    privileged: true
+    devices:
+      - /dev/snd:/dev/snd
+    environment:
+      - WAKEWORD_HOST=openwakeword
+      - WAKEWORD_PORT=10400
+      - STT_HOST=vosk
+      - STT_PORT=10300
+      - TTS_HOST=piper
+      - TTS_PORT=10200
+      - LLM_URL=http://llm:8080/v1/chat/completions
+      - WAKE_WORD_NAME=hey_jarvis
+    depends_on:
+      - piper
+      - vosk
+      - openwakeword
+      - llm
+    restart: unless-stopped

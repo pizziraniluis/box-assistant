@@ -1,0 +1,33 @@
+# --- Modelos (grandes, baixados via just download-all) ---
+models/*.gguf
+!models/.gitkeep
+
+vosk-model/**
+!vosk-model/.gitkeep
+
+piper/*.onnx
+piper/*.onnx.json
+!piper/.gitkeep
+
+openwakeword/**
+!openwakeword/.gitkeep
+
+# --- Dados gerados em runtime ---
+vosk-sentences/**
+!vosk-sentences/.gitkeep
+
+# --- Áudios de teste (regeneráveis via test_tts_stt.py) ---
+teste_ciclo.wav
+teste_piper.wav
+*.wav
+
+# --- Zips baixados manualmente ---
+*.zip
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+
+# --- Docker / SO ---
+.DS_Store

@@ -1,0 +1,103 @@
+# Justfile — box-assistant
+# Instalar o just: https://github.com/casey/just#installation
+# Uso: just <comando>   (ex: just up)
+
+# Lista todos os comandos disponíveis (comando padrão)
+default:
+    @just --list
+
+# --- Ciclo de vida dos containers ---
+
+# Sobe todos os serviços de back-end (sem o assistant, que precisa de áudio)
+up:
+    docker compose up -d piper vosk openwakeword llm
+
+# Sobe TUDO, incluindo o serviço assistant (só funciona com /dev/snd disponível, ex: TV Box)
+up-full:
+    docker compose up -d
+
+# Para todos os containers sem remover
+stop:
+    docker compose stop
+
+# Para e remove containers, redes (mantém volumes/dados baixados)
+down:
+    docker compose down
+
+# Reconstrói e sobe de novo o serviço assistant (depois de editar main.py/config.py)
+rebuild-assistant:
+    docker compose up -d --build assistant
+
+# Recria um serviço específico do zero (ex: just recreate vosk)
+recreate service:
+    docker compose up -d --force-recreate {{service}}
+
+# Reinicia um serviço específico (ex: just restart piper)
+restart service:
+    docker compose restart {{service}}
+
+# --- Status e diagnóstico ---
+
+# Mostra o status de todos os containers
+ps:
+    docker compose ps
+
+# Logs de todos os serviços, em tempo real
+logs:
+    docker compose logs -f
+
+# Logs de um serviço específico, em tempo real (ex: just logs-one vosk)
+logs-one service:
+    docker compose logs -f {{service}}
+
+# Últimas 50 linhas de log de um serviço, sem -f (ex: just logs-tail llm)
+logs-tail service:
+    docker compose logs --tail=50 {{service}}
+
+# --- Testes ---
+
+# Testa o LLM via curl
+test-llm:
+    curl -s http://localhost:8080/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -d '{"messages":[{"role":"user","content":"Oi, tudo bem?"}]}' | python3 -m json.tool
+
+# Testa o ciclo Piper -> Vosk (TTS gera áudio, Vosk transcreve de volta)
+test-cycle text="Ligar a luz da sala":
+    python3 test_tts_stt.py "{{text}}"
+
+# Verifica se as portas dos serviços estão respondendo
+test-ports:
+    @echo "Piper (10200):" && nc -zv localhost 10200
+    @echo "Vosk (10300):" && nc -zv localhost 10300
+    @echo "openWakeWord (10400):" && nc -zv localhost 10400
+    @echo "LLM (8080):" && nc -zv localhost 8080
+
+# --- Modelos e dados ---
+
+# Baixa o modelo do LLM (Qwen2.5-0.5B-Instruct, Q4_K_M)
+download-llm:
+    mkdir -p models
+    curl -L -o models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+        "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+
+# Baixa o modelo do Vosk em PT-BR
+download-vosk:
+    mkdir -p vosk-model
+    curl -L -o /tmp/vosk-model-small-pt.zip \
+        "https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip"
+    unzip -o /tmp/vosk-model-small-pt.zip -d vosk-model
+    rm /tmp/vosk-model-small-pt.zip
+
+# Baixa todos os modelos necessários de uma vez
+download-all: download-llm download-vosk
+
+# --- Limpeza ---
+
+# Remove containers, redes e volumes anônimos (mantém ./models, ./vosk-model, ./piper no disco)
+clean:
+    docker compose down -v
+
+# Remove TUDO, incluindo as imagens baixadas (recomeça do zero)
+nuke:
+    docker compose down -v --rmi all
