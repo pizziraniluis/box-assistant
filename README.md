@@ -142,6 +142,72 @@ just logs-one piper   # espere aparecer "Ready" de novo
 just test-cycle "Testando a nova voz"
 ```
 
+## Trocar o TTS: Piper vs Kokoro
+
+### Diferença entre Piper e Kokoro
+
+| Aspecto | Piper | Kokoro TTS | Recomendação |
+|---|---|---|---|
+| Qualidade de voz | Boa | Muito superior (mais natural) | Kokoro |
+| Naturalidade PT-BR | Aceitável | Muito boa (idioma suportado nativamente) | Kokoro |
+| Consumo de RAM | Muito leve (~60MB) | Bem mais pesado (várias centenas de MB — modelo de 82M parâmetros, o exato depende do backend PyTorch vs ONNX) | Piper |
+| Velocidade | Rápida | Rápida em GPU, mais lenta em CPU pura | Piper (em CPU) |
+| Facilidade de uso | Muito fácil (Wyoming nativo) | Depende da imagem escolhida (veja abaixo) | Piper |
+| Vozes disponíveis | Poucas em PT-BR | Mais opções, inclusive mistura de vozes | Kokoro |
+
+**Resumo:** use Piper se quiser o mais leve possível (seu caso hoje, rodando em ~1GB de RAM). Use Kokoro se sua TV Box tiver RAM de sobra e você priorizar naturalidade da voz acima de tudo.
+
+### Links dos repositórios
+
+- **Piper Voices** → https://huggingface.co/rhasspy/piper-voices
+- **Kokoro-82M (modelo original)** → https://huggingface.co/hexgrad/Kokoro-82M
+- **kokoro-wyoming** (imagem Docker que já fala o protocolo Wyoming, plug-and-play com este projeto) → https://github.com/nordwestt/kokoro-wyoming
+- **Kokoro-FastAPI** (alternativa com API compatível com OpenAI, mais opções de voz/idioma, mas exige adaptar `main.py`) → https://github.com/remsky/Kokoro-FastAPI
+
+### Como testar Kokoro no seu projeto
+
+A forma mais simples de testar sem reescrever código é usar a imagem **`kokoro-wyoming`**, já que ela fala o mesmo protocolo Wyoming que o Piper — seu `main.py` não precisa mudar, só o endereço/porta do TTS.
+
+**1. Adicione o serviço no `docker-compose.yml`:**
+```yaml
+  kokoro:
+    image: nordwestt/kokoro-wyoming
+    container_name: kokoro
+    ports:
+      - "10210:10210"   # porta diferente do Piper (10200)
+    restart: unless-stopped
+```
+
+**2. Aponte o assistente pro Kokoro em vez do Piper**, mudando as variáveis de ambiente do serviço `assistant` (ou direto em `config.py`):
+```yaml
+    environment:
+      - TTS_HOST=kokoro
+      - TTS_PORT=10210
+```
+
+**3. Suba e acompanhe os logs:**
+```bash
+just recreate kokoro
+just logs-one kokoro
+```
+
+**4. Teste a voz:**
+```bash
+just test-cycle "Olá, testando a voz do Kokoro agora."
+```
+
+> **Atenção:** ainda não confirmei quais nomes de vozes em PT-BR essa imagem expõe
+> por padrão (o Kokoro nomeia vozes por convenção tipo `af_heart`, `af_bella` — esses
+> prefixos `af_` são vozes femininas em inglês americano; vozes em português devem ter
+> outro prefixo). Antes de travar num nome de voz específico no compose, rode
+> `just logs-one kokoro` logo depois de subir o container — geralmente a lista de
+> vozes disponíveis aparece no log de inicialização ou num endpoint de listagem.
+
+Se o consumo de RAM apertar (a stack toda pode passar de 1GB com Kokoro no lugar do
+Piper), a alternativa é manter os dois serviços rodando ao mesmo tempo em portas
+diferentes e trocar qual usa via `TTS_HOST`/`TTS_PORT` conforme o teste — assim você
+compara qualidade e custo de recurso lado a lado antes de decidir qual fica.
+
 ## Mudar a personalidade / system prompt do assistente
 
 Edite `assistant/config.py`:
@@ -176,6 +242,22 @@ ambiente no `docker-compose.yml` (serviço `assistant`):
 > LLM, mais um adaptador que converse com o protocolo dos seus dispositivos (ex:
 > Home Assistant, Tasmota, Zigbee2MQTT) — isso é a próxima fase do projeto, ainda não
 > implementada aqui.
+
+### Onde encontrar inspiração pra system prompts
+
+**Coleções de system prompts reais (de produtos de verdade):**
+- [asgeirtj/system_prompts_leaks](https://github.com/asgeirtj/system_prompts_leaks) — a mais completa e atualizada. Tem uma pasta específica de **Perplexity Voice Assistant**, ótima referência por ser literalmente o mesmo tipo de produto (respostas por voz, foco em concisão e tom)
+- [YeeKal/leaked-system-prompts](https://github.com/YeeKal/leaked-system-prompts) — outra coleção grande, com site pra ler direto no navegador
+- [jujumilk3/leaked-system-prompts](https://github.com/jujumilk3/leaked-system-prompts) — um dos mais antigos e citados, mais enxuto
+
+**Coleções de personas genéricas pra remixar:**
+- [dontriskit/awesome-ai-system-prompts](https://github.com/dontriskit/awesome-ai-system-prompts) — além da coleção, traz uma análise dos padrões que se repetem (definir papel, tom, restrições negativas)
+- [f/awesome-chatgpt-prompts](https://github.com/f/awesome-chatgpt-prompts) — mais genérico, personas tipo "aja como um chef", "aja como um professor"
+
+**Padrões que valem a pena copiar pra um assistente de voz sem tela:**
+- Instrução explícita de **ser conciso** (a resposta vira fala, não texto lido — listas numeradas, links e formatação markdown não fazem sentido faladas)
+- Definir **tom** de forma específica (caloroso, direto, engraçado, etc) em vez de só "seja educado"
+- Avisar o modelo que a saída será sintetizada em voz, para evitar respostas longas demais para o TTS
 
 ## Periféricos de áudio para a TV Box
 
